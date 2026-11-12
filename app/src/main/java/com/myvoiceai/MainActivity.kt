@@ -3,6 +3,7 @@ package com.myvoiceai
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -195,35 +196,34 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
 
-        savedVoiceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        savedVoiceSpinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
 
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: android.view.View?,
-                position: Int,
-                id: Long
-            ) {
-                if (!spinnerReady || savedVoiceFiles.isEmpty()) return
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
 
-                val file = savedVoiceFiles.getOrNull(position) ?: return
-                selectedAudioPath = file.absolutePath
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: android.view.View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    if (!spinnerReady || savedVoiceFiles.isEmpty()) return
 
-                getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit().putString(SELECTED_VOICE, file.name).apply()
+                    val file = savedVoiceFiles.getOrNull(position) ?: return
+                    selectedAudioPath = file.absolutePath
 
-                stopPlayer()
-                playButton.isEnabled = file.exists()
-                playButton.text = "▶ PLAY VOICE SAMPLE"
-                status.text = "Saved voice selected: ${file.name}"
+                    getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .edit().putString(SELECTED_VOICE, file.name).apply()
+
+                    stopPlayer()
+                    playButton.isEnabled = file.exists()
+                    status.text = "Selected: ${file.nameWithoutExtension}"
+                }
             }
-        }
     }
 
     private fun refreshSavedVoices(preferredName: String? = null) {
-        val folder = voiceFolder()
-
-        savedVoiceFiles = folder.listFiles()
+        savedVoiceFiles = voiceFolder().listFiles()
             ?.filter { it.isFile && it.length() > 0L }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
@@ -231,7 +231,7 @@ class MainActivity : Activity() {
         val names = if (savedVoiceFiles.isEmpty()) {
             listOf("No saved voice yet")
         } else {
-            savedVoiceFiles.map { it.name }
+            savedVoiceFiles.map { it.nameWithoutExtension }
         }
 
         spinnerReady = false
@@ -253,7 +253,9 @@ class MainActivity : Activity() {
             ?: getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString(SELECTED_VOICE, null)
 
-        val index = savedVoiceFiles.indexOfFirst { it.name == wanted }.let {
+        val index = savedVoiceFiles.indexOfFirst {
+            it.name == wanted
+        }.let {
             if (it >= 0) it else 0
         }
 
@@ -272,7 +274,10 @@ class MainActivity : Activity() {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), RECORD_PERMISSION)
+            requestPermissions(
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                RECORD_PERMISSION
+            )
         } else {
             startRecording()
         }
@@ -286,7 +291,10 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
         if (requestCode == RECORD_PERMISSION) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            if (
+                grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
                 startRecording()
             } else {
                 status.text = "Microphone permission is required."
@@ -298,8 +306,15 @@ class MainActivity : Activity() {
         try {
             stopPlayer()
 
-            val time = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            recordingFile = File(voiceFolder(), "MyVoice_$time.m4a")
+            val time = SimpleDateFormat(
+                "yyyyMMdd_HHmmss",
+                Locale.US
+            ).format(Date())
+
+            recordingFile = File(
+                cacheDir,
+                "Recording_$time.m4a"
+            )
 
             val newRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(this)
@@ -320,7 +335,7 @@ class MainActivity : Activity() {
 
             isRecording = true
             recordButton.text = "■ STOP RECORDING"
-            status.text = "Recording your voice... Speak clearly."
+            status.text = "Recording your voice..."
 
         } catch (e: Exception) {
             releaseRecorder()
@@ -338,20 +353,13 @@ class MainActivity : Activity() {
             val file = recordingFile
 
             if (file != null && file.exists() && file.length() > 0L) {
-                selectedAudioPath = file.absolutePath
-
-                getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit().putString(SELECTED_VOICE, file.name).apply()
-
-                refreshSavedVoices(file.name)
-                status.text = "Voice recorded and saved successfully!"
+                askVoiceName(file, "My Voice")
             } else {
-                status.text = "Recording file was not created. Please record again."
+                status.text = "Recording file was not created."
             }
 
         } catch (e: Exception) {
             recordingFile?.delete()
-            selectedAudioPath = null
             status.text = "Recording was too short. Please record again."
 
         } finally {
@@ -382,7 +390,7 @@ class MainActivity : Activity() {
     }
 
     private fun getOriginalFileName(uri: Uri): String {
-        var name = "UploadedVoice"
+        var name = "Uploaded Voice"
         var cursor: Cursor? = null
 
         try {
@@ -396,7 +404,9 @@ class MainActivity : Activity() {
 
             if (cursor != null && cursor.moveToFirst()) {
                 val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0) name = cursor.getString(index) ?: name
+                if (index >= 0) {
+                    name = cursor.getString(index) ?: name
+                }
             }
 
         } catch (_: Exception) {
@@ -407,58 +417,146 @@ class MainActivity : Activity() {
         return name
     }
 
-    private fun safeFileName(name: String): String {
-        val cleaned = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
-            .trim('_', '.')
-
-        return cleaned.ifBlank { "UploadedVoice" }
-    }
-
     private fun saveUploadedAudio(uri: Uri) {
         try {
-            val originalName = safeFileName(getOriginalFileName(uri))
-
-            val extension = originalName.substringAfterLast('.', "audio").let {
-                if (it.length in 2..6) it else "audio"
+            val originalName = getOriginalFileName(uri)
+            val extension = originalName.substringAfterLast(
+                '.',
+                "audio"
+            ).let {
+                if (it.length in 2..6) it.lowercase(Locale.US) else "audio"
             }
 
-            val time = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-
-            val destination = File(
-                voiceFolder(),
-                "${originalName.substringBeforeLast('.', originalName)}_$time.$extension"
+            val temporaryFile = File.createTempFile(
+                "uploaded_",
+                ".$extension",
+                cacheDir
             )
 
             val input = contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("Cannot open selected audio")
 
             input.use { source ->
-                FileOutputStream(destination).use { output ->
+                FileOutputStream(temporaryFile).use { output ->
                     source.copyTo(output)
                     output.flush()
                 }
             }
 
-            if (!destination.exists() || destination.length() == 0L) {
-                destination.delete()
+            if (temporaryFile.length() == 0L) {
+                temporaryFile.delete()
                 throw IllegalStateException("Selected audio is empty")
             }
 
-            stopPlayer()
-            selectedAudioPath = destination.absolutePath
-
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit().putString(SELECTED_VOICE, destination.name).apply()
-
-            refreshSavedVoices(destination.name)
-
-            playButton.isEnabled = true
-            playButton.text = "▶ PLAY VOICE SAMPLE"
-
-            status.text = "Uploaded voice saved successfully: ${destination.name}"
+            askVoiceName(
+                temporaryFile,
+                originalName.substringBeforeLast('.', originalName)
+            )
 
         } catch (e: Exception) {
-            status.text = "Could not save uploaded voice: ${e.message}"
+            status.text = "Could not upload audio: ${e.message}"
+        }
+    }
+
+    private fun cleanVoiceName(name: String): String {
+        return name.trim()
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .trim('.', ' ')
+            .take(60)
+    }
+
+    private fun askVoiceName(sourceFile: File, suggestedName: String) {
+        val nameInput = EditText(this).apply {
+            setText(suggestedName)
+            hint = "এখানে Voice-এর নাম লিখুন"
+            textSize = 18f
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSelection(text.length)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Save Your Voice")
+            .setMessage("আপনার Voice-এর একটি নাম লিখুন")
+            .setView(nameInput)
+            .setPositiveButton("SAVE", null)
+            .setNegativeButton("CANCEL") { _, _ ->
+                sourceFile.delete()
+                status.text = "Voice was not saved."
+            }
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener {
+                    val voiceName = cleanVoiceName(
+                        nameInput.text.toString()
+                    )
+
+                    if (voiceName.isBlank()) {
+                        nameInput.error = "একটি নাম লিখুন"
+                        return@setOnClickListener
+                    }
+
+                    val savedFile = saveWithUniqueName(
+                        sourceFile,
+                        voiceName
+                    )
+
+                    if (savedFile != null) {
+                        selectedAudioPath = savedFile.absolutePath
+
+                        getSharedPreferences(PREFS, MODE_PRIVATE)
+                            .edit()
+                            .putString(SELECTED_VOICE, savedFile.name)
+                            .apply()
+
+                        refreshSavedVoices(savedFile.name)
+
+                        playButton.isEnabled = true
+                        status.text = "Voice saved: ${savedFile.nameWithoutExtension}"
+
+                        dialog.dismiss()
+                    } else {
+                        status.text = "Could not save voice. Please try again."
+                    }
+                }
+        }
+
+        dialog.show()
+    }
+
+    private fun saveWithUniqueName(
+        sourceFile: File,
+        voiceName: String
+    ): File? {
+        return try {
+            val extension = sourceFile.extension.ifBlank { "audio" }
+            var destination = File(
+                voiceFolder(),
+                "$voiceName.$extension"
+            )
+
+            var count = 2
+
+            while (destination.exists()) {
+                destination = File(
+                    voiceFolder(),
+                    "$voiceName ($count).$extension"
+                )
+                count++
+            }
+
+            val saved = sourceFile.copyTo(
+                destination,
+                overwrite = false
+            )
+
+            sourceFile.delete()
+            saved
+
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -480,11 +578,8 @@ class MainActivity : Activity() {
     }
 
     private fun playVoice() {
-        val currentPlayer = mediaPlayer
-
-        if (currentPlayer != null) {
+        if (mediaPlayer != null) {
             stopPlayer()
-            playButton.text = "▶ PLAY VOICE SAMPLE"
             status.text = "Voice playback stopped."
             return
         }
@@ -492,7 +587,7 @@ class MainActivity : Activity() {
         val path = selectedAudioPath
 
         if (path == null || !File(path).exists()) {
-            status.text = "Please select or upload a voice sample first."
+            status.text = "Please select a saved voice first."
             playButton.isEnabled = false
             return
         }
@@ -517,11 +612,10 @@ class MainActivity : Activity() {
             player.start()
 
             playButton.text = "■ STOP VOICE"
-            status.text = "Playing your voice sample..."
+            status.text = "Playing your voice..."
 
         } catch (e: Exception) {
             stopPlayer()
-            playButton.text = "▶ PLAY VOICE SAMPLE"
             status.text = "Unable to play audio: ${e.message}"
         }
     }
